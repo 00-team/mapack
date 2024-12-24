@@ -108,6 +108,7 @@ pub fn mapack(code: TokenStream) -> TokenStream {
         }
     }
 
+    println!("{s}");
     s.into()
 }
 
