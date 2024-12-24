@@ -1,10 +1,11 @@
-[package]
-name = "mapack"
-version = "0.1.0"
+[workspace]
+members = ["mapack", "mapack-macros", "example"]
+resolver = "2"
+
+[workspace.package]
 edition = "2021"
-
-[lin]
-name = "mapack"
-
-[dependencies]
-protobuf = "3.7.1"
+license-file = "./LICENSE"
+repository = "https://github.com/00-team/mapack/"
+readme = "./README.md"
+keywords = ["mapbox", "mapbox vector tiles"]
+categories = ["mapbox"]

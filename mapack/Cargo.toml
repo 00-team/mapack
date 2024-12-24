@@ -1,0 +1,15 @@
+[package]
+name = "mapack"
+version = "0.1.0"
+description = "mapbox vector tiles"
+publish = true
+readme.workspace = true
+edition.workspace = true
+keywords.workspace = true
+repository.workspace = true
+categories.workspace = true
+license-file.workspace = true
+
+[dependencies]
+mapack-macros = { path = "../mapack-macros" }
+protobuf = "3.7.1"
