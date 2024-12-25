@@ -104,7 +104,7 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                 let name_str = name.to_string();
                 let keys_len = fields.len();
                 quote_into! {s +=
-                    #[derive(Debug)]
+                    #[derive(Debug, Clone)]
                     pub struct #ident {
                        pub coordinate: #ci::Coordinate,
                        #{for Field { ident, ty, .. } in fields.iter() {
