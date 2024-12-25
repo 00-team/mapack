@@ -168,20 +168,6 @@ impl Marker {
     }
 }
 
-impl Value {
-    pub fn from_string(value: String) -> Self {
-        Self { string_value: Some(value), ..Default::default() }
-    }
-
-    pub fn from_bool(v: bool) -> Self {
-        Self { bool_value: Some(v), ..Default::default() }
-    }
-
-    pub fn from_uint(v: u64) -> Self {
-        Self { uint_value: Some(v), ..Default::default() }
-    }
-}
-
 const KEYS: [&str; 5] =
     ["gene", "is_private", "is_for_guest", "category", "name"];
 

@@ -1,13 +1,47 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::format_ident;
+use quote::{format_ident, ToTokens};
 use quote_into::quote_into;
+
+#[derive(Debug, Clone)]
+struct Field {
+    ident: syn::Ident,
+    ty: syn::Path,
+    key: String,
+    auto_encode: bool,
+    auto_decode: bool,
+}
+
+impl syn::parse::Parse for Field {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut auto_encode = true;
+        let mut auto_decode = true;
+
+        let attrs = input.call(syn::Attribute::parse_outer)?;
+        for attr in attrs {
+            if let syn::Meta::Path(mp) = attr.meta {
+                match mp.to_token_stream().to_string().as_str() {
+                    "no_decode" => auto_decode = false,
+                    "no_encode" => auto_encode = false,
+                    _ => {}
+                }
+            }
+        }
+
+        let ident: syn::Ident = input.parse()?;
+        input.parse::<syn::Token![:]>()?;
+        let ty: syn::Path = input.parse()?;
+
+        let key = ident.to_string();
+        Ok(Self { ident, ty, key, auto_decode, auto_encode })
+    }
+}
 
 #[derive(Debug)]
 struct Layer {
     ident: syn::Ident,
     name: syn::Ident,
-    fields: Vec<(syn::Ident, syn::Path, String)>,
+    fields: Vec<Field>,
 }
 
 impl syn::parse::Parse for Layer {
@@ -24,24 +58,8 @@ impl syn::parse::Parse for Layer {
 
         let content;
         syn::braced!(content in input);
-
-        loop {
-            if content.is_empty() {
-                break;
-            }
-
-            let ident: syn::Ident = content.parse()?;
-            content.parse::<syn::Token![:]>()?;
-            let ty: syn::Path = content.parse()?;
-
-            let key = ident.to_string();
-            layer.fields.push((ident, ty, key));
-
-            if content.is_empty() {
-                break;
-            }
-            content.parse::<syn::Token![,]>()?;
-        }
+        let fields = content.parse_terminated(Field::parse, syn::Token![,])?;
+        layer.fields = fields.iter().cloned().collect();
 
         Ok(layer)
     }
@@ -88,7 +106,7 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                 quote_into! {s +=
                     pub struct #ident {
                        pub coordinate: #ci::Coordinate,
-                       #{for (ident, ty, _) in fields.iter() {
+                       #{for Field { ident, ty, .. } in fields.iter() {
                             quote_into!(s += pub #ident: #ty,);
                        }}
                     }
@@ -96,13 +114,15 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                     impl #ident {
                         pub const NAME: &str = #name_str;
                         pub const KEYS: [&str; #keys_len] = [
-                            #{for (_, _, key) in fields {quote_into!(s += #key,)}}
+                            #{for Field { key, .. } in fields {
+                                quote_into!(s += #key,)}
+                            }
                         ];
 
                         pub fn new(coordinate: #ci::Coordinate) -> Self {
                             Self {
                                 coordinate,
-                                #{for (ident, ty, _) in fields.iter() {
+                                #{for Field { ident, ty, .. } in fields.iter() {
                                     quote_into!(s += #ident: #ty::default(),);
                                 }}
                             }
@@ -111,15 +131,14 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                         #[allow(dead_code)]
                         pub fn decode_point(
                             zom: u8, tx: u32, ty: u32,
-                            feature: &#ci::vector_tile::tile::Feature,
-                            values: &[#ci::vector_tile::tile::Value],
+                            feature: &#ci::Feature, values: &[#ci::Value],
                         ) -> Result<Self, &'static str> {
                             #{point_decode(s, layer)}
                         }
 
                         pub fn decode_layer(
                             zom: u8, tx: u32, ty: u32,
-                            layer: &#ci::vector_tile::tile::Layer
+                            layer: &#ci::Layer
                         ) -> #ci::protobuf::Result<Vec<Self>> {
                             let mut points = Vec::<Self>::with_capacity(layer.features.len());
 
@@ -134,6 +153,26 @@ pub fn mapack(code: TokenStream) -> TokenStream {
 
                             Ok(points)
                         }
+
+                        #{for field in fields {
+                            let Field {ty, key, ..} = field;
+                            if field.auto_decode {
+                                let ident = format_ident!("decode_{key}");
+                                quote_into! {s +=
+                                    fn #ident(v: &#ci::Value) -> Option<#ty> {
+                                        #{point_auto_decode(s, field);}
+                                    }
+                                }
+                            }
+                            if field.auto_encode {
+                                let ident = format_ident!("encode_{}", field.key);
+                                quote_into! {s +=
+                                    fn #ident(&self) -> #ci::Value {
+                                        #{point_auto_encode(s, field);}
+                                    }
+                                }
+                            }
+                        }}
                     }
                 }
             }
@@ -156,24 +195,76 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                 }}
             }
 
+            #[allow(dead_code)]
             pub fn decode(zom: u8, tx: u32, ty: u32, pbf: Vec<u8>) -> #ci::protobuf::Result<Self> {
                 let mut tile = Self::new();
-                let vec_tile = <#ci::vector_tile::Tile as #ci::protobuf::Message>::parse_from_bytes(&pbf)?;
+                let vec_tile = <#ci::Tile as #ci::protobuf::Message>::parse_from_bytes(&pbf)?;
                 if vec_tile.layers.is_empty() { return Ok(tile); }
 
                 for layer in vec_tile.layers.iter() {#{
                     tile_decode(s, &tile.layers)
                 }}
 
-
-
                 Ok(tile)
+            }
+
+            #[allow(dead_code)]
+            pub fn encode(&self) -> #ci::protobuf::Result<Vec<u8>> {
+                let mut vec_tile = #ci::Tile::default();
+
+                #{for layer in tile.layers.iter() {
+                    quote_into!(s += 'a: {#{tile_encode(s, layer)}});
+                }}
+
+                #ci::protobuf::Message::write_to_bytes(&vec_tile)
             }
         }
     }
 
-    println!("{s}");
     s.into()
+}
+
+fn tile_encode(s: &mut TokenStream2, Layer { ident, name, fields }: &Layer) {
+    let keys_len = fields.len();
+    let ci = crate_ident();
+    let name_str = name.to_string();
+
+    quote_into! {s +=
+        let mut values = Vec::<#ci::Value>::with_capacity(self.#name.len() * #keys_len);
+        let mut features = Vec::<#ci::Feature>::with_capacity(self.#name.len());
+
+        for point in self.#name.iter() {
+            #{for Field { key, .. } in fields.iter() {
+                let ptv = format_ident!("encode_{key}");
+                let val = format_ident!("{key}_value");
+                quote_into! {s +=
+                    let #val = values.len() as u32;
+                    values.push(point.#ptv());
+                }
+            }}
+
+            features.push(#ci::Feature {
+                tags: vec![#{for (idx, Field { key, .. }) in fields.iter().enumerate() {
+                    let idx = idx as u32;
+                    let val = format_ident!("{key}_value");
+                    quote_into!(s += #idx, #val,);
+                }}],
+                geometry: point.coordinate.to_geometry().to_vec(),
+                type_: Some(#ci::protobuf::EnumOrUnknown::new(#ci::GeomType::POINT)),
+                ..Default::default()
+            });
+        }
+
+        vec_tile.layers.push(#ci::Layer {
+            name: Some(String::from(#name_str)),
+            extent: Some(4096),
+            version: Some(2),
+            features,
+            keys: #ident::KEYS.map(|k| k.to_string()).to_vec(),
+            values,
+            ..Default::default()
+        });
+    }
 }
 
 fn tile_decode(s: &mut TokenStream2, layers: &[Layer]) {
@@ -191,6 +282,38 @@ fn tile_decode(s: &mut TokenStream2, layers: &[Layer]) {
         }
 
         continue;
+    }
+}
+
+fn point_auto_encode(s: &mut TokenStream2, field: &Field) {
+    let Field { ident, ty, .. } = field;
+    let ci = crate_ident();
+    let ty_str = ty.to_token_stream().to_string();
+    match ty_str.as_str() {
+        "bool" => quote_into!(s += #ci::Value::from_bool(self.#ident)),
+        "u8" | "u16" | "u32" | "u64" => {
+            quote_into!(s += #ci::Value::from_uint(self.#ident as u64))
+        }
+        "String" => {
+            quote_into!(s += #ci::Value::from_string(self.#ident.clone()))
+        }
+        _ => quote_into! {s +=
+            compile_error!(concat!("bad prop type for auto encoding: ", #ty_str));
+        },
+    }
+}
+fn point_auto_decode(s: &mut TokenStream2, field: &Field) {
+    let ty = &field.ty;
+    let ty_str = ty.to_token_stream().to_string();
+    match ty_str.as_str() {
+        "bool" => quote_into!(s += Some(v.bool_value())),
+        "String" => quote_into! {s += Some(v.string_value().to_string())},
+        "u8" | "u16" | "u32" | "u64" => {
+            quote_into!(s += Some(v.uint_value() as #ty))
+        }
+        _ => quote_into! {s +=
+            compile_error!(concat!("bad prop type for auto decoding: ", #ty_str));
+        },
     }
 }
 
@@ -225,7 +348,7 @@ fn point_decode(s: &mut TokenStream2, Layer { fields, .. }: &Layer) {
             let v = &values[v];
 
             match Self::KEYS[k] {
-                #{for (ident, _, key) in fields {
+                #{for Field { ident, key, .. } in fields {
                     let pfv = format_ident!("decode_{key}");
                     quote_into! {s += #key => {
                         if let Some(value) = Self::#pfv(v) {
