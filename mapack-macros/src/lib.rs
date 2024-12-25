@@ -7,7 +7,7 @@ use quote_into::quote_into;
 struct Layer {
     ident: syn::Ident,
     name: syn::Ident,
-    fields: Vec<(syn::Ident, syn::Path)>,
+    fields: Vec<(syn::Ident, syn::Path, String)>,
 }
 
 impl syn::parse::Parse for Layer {
@@ -34,7 +34,8 @@ impl syn::parse::Parse for Layer {
             content.parse::<syn::Token![:]>()?;
             let ty: syn::Path = content.parse()?;
 
-            layer.fields.push((ident, ty));
+            let key = ident.to_string();
+            layer.fields.push((ident, ty, key));
 
             if content.is_empty() {
                 break;
@@ -80,20 +81,59 @@ pub fn mapack(code: TokenStream) -> TokenStream {
 
     quote_into! {s +=
         #{
-            for Layer { ident, fields, name } in tile.layers.iter() {
+            for layer in tile.layers.iter() {
+                let Layer { ident, fields, name } = layer;
                 let name_str = name.to_string();
+                let keys_len = fields.len();
                 quote_into! {s +=
                     pub struct #ident {
                        pub coordinate: #ci::Coordinate,
-                       #{
-                            for (ident, ty) in fields.iter() {
-                                quote_into!(s += pub #ident: #ty,);
-                            }
-                        }
+                       #{for (ident, ty, _) in fields.iter() {
+                            quote_into!(s += pub #ident: #ty,);
+                       }}
                     }
 
                     impl #ident {
                         pub const NAME: &str = #name_str;
+                        pub const KEYS: [&str; #keys_len] = [
+                            #{for (_, _, key) in fields {quote_into!(s += #key,)}}
+                        ];
+
+                        pub fn new(coordinate: #ci::Coordinate) -> Self {
+                            Self {
+                                coordinate,
+                                #{for (ident, ty, _) in fields.iter() {
+                                    quote_into!(s += #ident: #ty::default(),);
+                                }}
+                            }
+                        }
+
+                        #[allow(dead_code)]
+                        pub fn decode_point(
+                            zom: u8, tx: u32, ty: u32,
+                            feature: &#ci::vector_tile::tile::Feature,
+                            values: &[#ci::vector_tile::tile::Value],
+                        ) -> Result<Self, &'static str> {
+                            #{point_decode(s, layer)}
+                        }
+
+                        pub fn decode_layer(
+                            zom: u8, tx: u32, ty: u32,
+                            layer: &#ci::vector_tile::tile::Layer
+                        ) -> #ci::protobuf::Result<Vec<Self>> {
+                            let mut points = Vec::<Self>::with_capacity(layer.features.len());
+
+                            for feature in layer.features.iter() {
+                                match Self::decode_point(zom, tx, ty, feature, &layer.values) {
+                                    Ok(v) => points.push(v),
+                                    Err(e) => {
+                                        println!("found an invalid marker: {e:?}")
+                                    }
+                                }
+                            }
+
+                            Ok(points)
+                        }
                     }
                 }
             }
@@ -106,10 +146,101 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                 }
             }
         }
+
+        impl Tile {
+            pub fn new() -> Self {
+                Self {#{
+                    for Layer { name, .. } in tile.layers.iter() {
+                        quote_into!(s += #name: Vec::new(), );
+                    }
+                }}
+            }
+
+            pub fn decode(zom: u8, tx: u32, ty: u32, pbf: Vec<u8>) -> #ci::protobuf::Result<Self> {
+                let mut tile = Self::new();
+                let vec_tile = <#ci::vector_tile::Tile as #ci::protobuf::Message>::parse_from_bytes(&pbf)?;
+                if vec_tile.layers.is_empty() { return Ok(tile); }
+
+                for layer in vec_tile.layers.iter() {#{
+                    tile_decode(s, &tile.layers)
+                }}
+
+
+
+                Ok(tile)
+            }
+        }
     }
 
     println!("{s}");
     s.into()
+}
+
+fn tile_decode(s: &mut TokenStream2, layers: &[Layer]) {
+    quote_into! {s +=
+        if layer.version() != 2 { continue }
+
+        match layer.name() {
+            #{for Layer { name, ident, .. } in layers {
+                let name_str = name.to_string();
+                quote_into! {s += #name_str => {
+                    tile.#name = #ident::decode_layer(zom, tx, ty, layer)?;
+                }}
+            }}
+            _ => {}
+        }
+
+        continue;
+    }
+}
+
+fn point_decode(s: &mut TokenStream2, Layer { fields, .. }: &Layer) {
+    let ci = crate_ident();
+
+    quote_into! {s +=
+        if feature.geometry.len() != 3 {
+            return Err("bad geometry");
+        }
+
+        let tags = &feature.tags;
+        // if tags.is_empty() {
+        //     return Err("no tags");
+        // }
+        if tags.len() % 2 != 0 {
+            return Err("bad tags length");
+        }
+
+        let geometry: [u32; 3] = feature.geometry.clone().try_into().unwrap();
+        let mut point = Self::new(#ci::Coordinate::from_geometry(zom, tx, ty, geometry));
+
+        let mut tags_iter = tags.iter();
+        loop {
+            let Some(k) = tags_iter.next() else { break };
+            let Some(v) = tags_iter.next() else { break };
+            let k = *k as usize;
+            let v = *v as usize;
+            if k >= Self::KEYS.len() || v >= values.len() {
+                return Err("invalid tags");
+            }
+            let v = &values[v];
+
+            match Self::KEYS[k] {
+                #{for (ident, _, key) in fields {
+                    let pfv = format_ident!("decode_{key}");
+                    quote_into! {s += #key => {
+                        if let Some(value) = Self::#pfv(v) {
+                            point.#ident = value;
+                        } else {
+                            return Err(concat!("could not decode ", #key, "s value"));
+                        }
+                    }}
+                }}
+                _ => unreachable!()
+            }
+        }
+
+        Ok(point)
+    }
 }
 
 fn to_camelcase(input: &str) -> String {
