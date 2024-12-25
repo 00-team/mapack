@@ -132,6 +132,18 @@ impl Coordinate {
     pub fn ty(&self) -> u32 {
         self.ty
     }
+
+    pub fn txy(&self) -> (u32, u32) {
+        (self.tx, self.ty)
+    }
+
+    pub fn sxy(&self) -> (u32, u32) {
+        (self.sx, self.sy)
+    }
+
+    pub fn latlng(&self) -> (f64, f64) {
+        (self.lat, self.lng)
+    }
 }
 
 #[cfg(test)]
