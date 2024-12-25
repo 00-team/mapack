@@ -104,6 +104,7 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                 let name_str = name.to_string();
                 let keys_len = fields.len();
                 quote_into! {s +=
+                    #[derive(Debug)]
                     pub struct #ident {
                        pub coordinate: #ci::Coordinate,
                        #{for Field { ident, ty, .. } in fields.iter() {
@@ -178,12 +179,11 @@ pub fn mapack(code: TokenStream) -> TokenStream {
             }
         }
 
+        #[derive(Debug)]
         pub struct Tile {
-            #{
-                for Layer { ident, name, .. } in tile.layers.iter() {
-                    quote_into!(s += pub #name: Vec<#ident>, );
-                }
-            }
+            #{for Layer { ident, name, .. } in tile.layers.iter() {
+                quote_into!(s += pub #name: Vec<#ident>, );
+            }}
         }
 
         impl Tile {
@@ -286,9 +286,15 @@ fn tile_decode(s: &mut TokenStream2, layers: &[Layer]) {
 }
 
 fn point_auto_encode(s: &mut TokenStream2, field: &Field) {
-    let Field { ident, ty, .. } = field;
     let ci = crate_ident();
+
+    let Field { ident, ty, .. } = field;
     let ty_str = ty.to_token_stream().to_string();
+
+    if ty.segments.last().unwrap().ident == "Gene" {
+        quote_into!(s += #ci::Value::from_string(self.#ident.as_hex()));
+        return;
+    }
     match ty_str.as_str() {
         "bool" => quote_into!(s += #ci::Value::from_bool(self.#ident)),
         "u8" | "u16" | "u32" | "u64" => {
@@ -302,9 +308,14 @@ fn point_auto_encode(s: &mut TokenStream2, field: &Field) {
         },
     }
 }
+
 fn point_auto_decode(s: &mut TokenStream2, field: &Field) {
     let ty = &field.ty;
     let ty_str = ty.to_token_stream().to_string();
+    if ty.segments.last().unwrap().ident == "Gene" {
+        quote_into!(s += v.string_value().parse::<#ty>().ok());
+        return;
+    }
     match ty_str.as_str() {
         "bool" => quote_into!(s += Some(v.bool_value())),
         "String" => quote_into! {s += Some(v.string_value().to_string())},
