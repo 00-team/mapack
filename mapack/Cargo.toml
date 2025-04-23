@@ -13,4 +13,4 @@ license-file.workspace = true
 [dependencies]
 # mapack-macros = { path = "../mapack-macros" }
 mapack-macros = "0.1.0"
-protobuf = "3.7.1"
+protobuf = "3.7.2"
