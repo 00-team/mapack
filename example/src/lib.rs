@@ -19,6 +19,7 @@ mod tests {
         let coords = Coordinate::from_latlng(16, latitude, longitude);
 
         my_tile.poi.push(my_tiles::PointPoi {
+            id: Some(12),
             name: "new poi".to_string(),
             coordinate: coords.clone(),
         });
@@ -37,6 +38,7 @@ mod tests {
         let mp = &my_tile.poi[0];
 
         assert_eq!(mp.name, op.name);
+        assert_eq!(mp.id, op.id);
         assert!(mp.coordinate.distance_to(&op.coordinate) < 1.0, "distance");
 
         assert_eq!(old_tile.encode().unwrap(), pbf);

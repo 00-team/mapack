@@ -33,6 +33,9 @@ impl syn::parse::Parse for Field {
         let ty: syn::Path = input.parse()?;
 
         let key = ident.to_string();
+        if key == "id" {
+            return Err(syn::Error::new(input.span(), "key `id` is reserved"));
+        }
         Ok(Self { ident, ty, key, auto_decode, auto_encode })
     }
 }
@@ -106,10 +109,12 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                 quote_into! {s +=
                     #[derive(Debug, Clone)]
                     pub struct #ident {
-                       pub coordinate: #ci::Coordinate,
-                       #{for Field { ident, ty, .. } in fields.iter() {
+                        pub coordinate: #ci::Coordinate,
+                        pub id: Option<u64>,
+
+                        #{for Field { ident, ty, .. } in fields.iter() {
                             quote_into!(s += pub #ident: #ty,);
-                       }}
+                        }}
                     }
 
                     impl #ident {
@@ -123,6 +128,7 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                         pub fn new(coordinate: #ci::Coordinate) -> Self {
                             Self {
                                 coordinate,
+                                id: None,
                                 #{for Field { ident, ty, .. } in fields.iter() {
                                     quote_into!(s += #ident: #ty::default(),);
                                 }}
@@ -244,6 +250,7 @@ fn tile_encode(s: &mut TokenStream2, Layer { ident, name, fields }: &Layer) {
             }}
 
             features.push(#ci::Feature {
+                id: point.id,
                 tags: vec![#{for (idx, Field { key, .. }) in fields.iter().enumerate() {
                     let idx = idx as u32;
                     let val = format_ident!("{key}_value");
@@ -346,6 +353,7 @@ fn point_decode(s: &mut TokenStream2, Layer { fields, .. }: &Layer) {
 
         let geometry: [u32; 3] = feature.geometry.clone().try_into().unwrap();
         let mut point = Self::new(#ci::Coordinate::from_geometry(zom, tx, ty, geometry));
+        point.id = feature.id;
 
         let mut tags_iter = tags.iter();
         loop {
