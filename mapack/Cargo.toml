@@ -1,6 +1,6 @@
 [package]
 name = "mapack"
-version = "0.2.0"
+version = "0.3.0"
 description = "mapbox vector tiles"
 publish = true
 readme.workspace = true
@@ -12,5 +12,5 @@ license-file.workspace = true
 
 [dependencies]
 # mapack-macros = { path = "../mapack-macros" }
-mapack-macros = "0.2.0"
+mapack-macros = "0.3.0"
 protobuf = "3.7.2"

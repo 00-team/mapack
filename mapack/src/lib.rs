@@ -19,4 +19,8 @@ impl Value {
     pub fn from_uint(v: u64) -> Self {
         Self { uint_value: Some(v), ..Default::default() }
     }
+
+    pub fn from_int(v: i64) -> Self {
+        Self { int_value: Some(v), ..Default::default() }
+    }
 }

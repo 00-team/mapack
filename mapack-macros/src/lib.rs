@@ -307,6 +307,9 @@ fn point_auto_encode(s: &mut TokenStream2, field: &Field) {
         "u8" | "u16" | "u32" | "u64" => {
             quote_into!(s += #ci::Value::from_uint(self.#ident as u64))
         }
+        "i8" | "i16" | "i32" | "i64" => {
+            quote_into!(s += #ci::Value::from_int(self.#ident as i64))
+        }
         "String" => {
             quote_into!(s += #ci::Value::from_string(self.#ident.clone()))
         }
@@ -328,6 +331,9 @@ fn point_auto_decode(s: &mut TokenStream2, field: &Field) {
         "String" => quote_into! {s += Some(v.string_value().to_string())},
         "u8" | "u16" | "u32" | "u64" => {
             quote_into!(s += Some(v.uint_value() as #ty))
+        }
+        "i8" | "i16" | "i32" | "i64" => {
+            quote_into!(s += Some(v.int_value() as #ty))
         }
         _ => quote_into! {s +=
             compile_error!(concat!("bad prop type for auto decoding: ", #ty_str));
