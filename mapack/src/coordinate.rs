@@ -54,20 +54,24 @@ impl Coordinate {
         self.ty = ty as u32;
     }
 
-    pub fn from_screen(zom: u8, tx: u32, ty: u32, sx: u32, sy: u32) -> Self {
-        let zom = zom.clamp(0, MAX_ZOOM);
-        let mut coords = Self { zom, lat: 0.0, lng: 0.0, tx, ty, sy, sx };
-
-        let n = (1 << zom) as f64;
-        let (tx, ty, sx, sy) = (tx as f64, ty as f64, sx as f64, sy as f64);
+    fn update_latlng(&mut self) {
+        let n = (1 << self.zom) as f64;
+        let (tx, ty) = (self.tx as f64, self.ty as f64);
+        let (sx, sy) = (self.sx as f64, self.sy as f64);
         let x = tx + (sx / 4096.0);
         let y = ty + ((4096.0 - sy) / 4096.0);
         let lng = (x / n) * 360.0 - 180.0;
         let lat = (PI * (1.0 - 2.0 * y / n)).sinh().atan().to_degrees();
 
-        coords.lat = lat;
-        coords.lng = lng;
+        self.lat = lat;
+        self.lng = lng;
+    }
 
+    pub fn from_screen(zom: u8, tx: u32, ty: u32, sx: u32, sy: u32) -> Self {
+        let zom = zom.clamp(0, MAX_ZOOM);
+        let mut coords = Self { zom, lat: 0.0, lng: 0.0, tx, ty, sy, sx };
+
+        coords.update_latlng();
         coords
     }
 
@@ -104,6 +108,12 @@ impl Coordinate {
         let total_delta = hav_delta_phi + hav_delta_lam;
 
         (2.0 * 6378137.0 * total_delta.sqrt().asin() * 1e3).round() / 1e3
+    }
+
+    pub fn set_screen(&mut self, sx: u32, sy: u32) {
+        self.sx = sx;
+        self.sy = sy;
+        self.update_latlng();
     }
 
     pub fn zoom(&self) -> u8 {
