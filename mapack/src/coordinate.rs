@@ -37,7 +37,7 @@ impl Coordinate {
     }
 
     pub fn with_zoom(&self, zoom: u8) -> Self {
-        let mut new = self.clone();
+        let mut new = *self;
         new.set_zoom(zoom);
         new
     }
