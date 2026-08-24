@@ -69,6 +69,9 @@ impl Coordinate {
 
     pub fn from_screen(zom: u8, tx: u32, ty: u32, sx: u32, sy: u32) -> Self {
         let zom = zom.clamp(0, MAX_ZOOM);
+        assert!(sx <= 4096, "sx is bigger than 4096: {sx}");
+        assert!(sy <= 4096, "sy is bigger than 4096: {sy}");
+
         let mut coords = Self { zom, lat: 0.0, lng: 0.0, tx, ty, sy, sx };
 
         coords.update_latlng();
@@ -111,6 +114,8 @@ impl Coordinate {
     }
 
     pub fn set_screen(&mut self, sx: u32, sy: u32) {
+        assert!(sx <= 4096, "sx is bigger than 4096: {sx}");
+        assert!(sy <= 4096, "sy is bigger than 4096: {sy}");
         self.sx = sx;
         self.sy = sy;
         self.update_latlng();
