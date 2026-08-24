@@ -24,3 +24,20 @@ impl Value {
         Self { int_value: Some(v), ..Default::default() }
     }
 }
+
+#[derive(Debug)]
+/// mapack error
+pub enum Error {
+    Protobuf(protobuf::Error),
+    EmptyTile,
+    BadGeomerty,
+    BadTagsLength,
+    InvalidTag,
+    DecodeFailed(&'static str),
+}
+
+impl From<protobuf::Error> for Error {
+    fn from(value: protobuf::Error) -> Self {
+        Self::Protobuf(value)
+    }
+}

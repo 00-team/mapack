@@ -139,14 +139,14 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                         pub fn decode_point(
                             zom: u8, tx: u32, ty: u32,
                             feature: &#ci::Feature, values: &[#ci::Value],
-                        ) -> Result<Self, &'static str> {
+                        ) -> Result<Self, #ci::Error> {
                             #{point_decode(s, layer)}
                         }
 
                         pub fn decode_layer(
                             zom: u8, tx: u32, ty: u32,
                             layer: &#ci::Layer
-                        ) -> #ci::protobuf::Result<Vec<Self>> {
+                        ) -> Result<Vec<Self>, #ci::Error> {
                             let mut points = Vec::<Self>::with_capacity(layer.features.len());
 
                             for feature in layer.features.iter() {
@@ -202,7 +202,9 @@ pub fn mapack(code: TokenStream) -> TokenStream {
             }
 
             #[allow(dead_code)]
-            pub fn decode(zom: u8, tx: u32, ty: u32, pbf: Vec<u8>) -> #ci::protobuf::Result<Self> {
+            pub fn decode(zom: u8, tx: u32, ty: u32, pbf: Vec<u8>) -> Result<Self, #ci::Error> {
+                if pbf.is_empty() {
+                }
                 let mut tile = Self::new();
                 let vec_tile = <#ci::Tile as #ci::protobuf::Message>::parse_from_bytes(&pbf)?;
                 if vec_tile.layers.is_empty() { return Ok(tile); }
@@ -215,14 +217,15 @@ pub fn mapack(code: TokenStream) -> TokenStream {
             }
 
             #[allow(dead_code)]
-            pub fn encode(&self) -> #ci::protobuf::Result<Vec<u8>> {
+            pub fn encode(&self) -> Result<Vec<u8>, #ci::Error> {
                 let mut vec_tile = #ci::Tile::default();
 
                 #{for layer in tile.layers.iter() {
                     quote_into!(s += 'a: {#{tile_encode(s, layer)}});
                 }}
 
-                #ci::protobuf::Message::write_to_bytes(&vec_tile)
+                let r = #ci::protobuf::Message::write_to_bytes(&vec_tile)?;
+                Ok(r)
             }
         }
     }
@@ -346,7 +349,7 @@ fn point_decode(s: &mut TokenStream2, Layer { fields, .. }: &Layer) {
 
     quote_into! {s +=
         if feature.geometry.len() != 3 {
-            return Err("bad geometry");
+            return Err(#ci::Error::BadGeomerty);
         }
 
         let tags = &feature.tags;
@@ -354,7 +357,7 @@ fn point_decode(s: &mut TokenStream2, Layer { fields, .. }: &Layer) {
         //     return Err("no tags");
         // }
         if tags.len() % 2 != 0 {
-            return Err("bad tags length");
+            return Err(#ci::Error::BadTagsLength);
         }
 
         let geometry: [u32; 3] = feature.geometry.clone().try_into().unwrap();
@@ -368,7 +371,7 @@ fn point_decode(s: &mut TokenStream2, Layer { fields, .. }: &Layer) {
             let k = *k as usize;
             let v = *v as usize;
             if k >= Self::KEYS.len() || v >= values.len() {
-                return Err("invalid tags");
+                return Err(#ci::Error::InvalidTag);
             }
             let v = &values[v];
 
@@ -379,7 +382,8 @@ fn point_decode(s: &mut TokenStream2, Layer { fields, .. }: &Layer) {
                         if let Some(value) = Self::#pfv(v) {
                             point.#ident = value;
                         } else {
-                            return Err(concat!("could not decode ", #key, "s value"));
+                            // return Err(concat!("could not decode ", #key, "s value"));
+                            return Err(#ci::Error::DecodeFailed(#key));
                         }
                     }}
                 }}
