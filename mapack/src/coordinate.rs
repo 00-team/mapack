@@ -2,7 +2,7 @@ use core::f64::consts::PI;
 
 const MAX_ZOOM: u8 = 22;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 /// `Mapack` coordinate
 pub struct Coordinate {
     zom: u8,
