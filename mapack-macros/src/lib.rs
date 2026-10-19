@@ -150,12 +150,9 @@ pub fn mapack(code: TokenStream) -> TokenStream {
                             let mut points = Vec::<Self>::with_capacity(layer.features.len());
 
                             for feature in layer.features.iter() {
-                                match Self::decode_point(zom, tx, ty, feature, &layer.values) {
-                                    Ok(v) => points.push(v),
-                                    Err(e) => {
-                                        println!("found an invalid marker: {e:?}")
-                                    }
-                                }
+                                points.push(Self::decode_point(
+                                    zom, tx, ty, feature, &layer.values
+                                )?);
                             }
 
                             Ok(points)
@@ -360,7 +357,8 @@ fn point_decode(s: &mut TokenStream2, Layer { fields, .. }: &Layer) {
             return Err(#ci::Error::BadTagsLength);
         }
 
-        let geometry: [u32; 3] = feature.geometry.clone().try_into().unwrap();
+        let geometry: [u32; 3] = feature.geometry.clone().try_into()
+            .expect("invalid feature geometry length");
         let mut point = Self::new(#ci::Coordinate::from_geometry(zom, tx, ty, geometry));
         point.id = feature.id;
 
@@ -379,15 +377,13 @@ fn point_decode(s: &mut TokenStream2, Layer { fields, .. }: &Layer) {
                 #{for Field { ident, key, .. } in fields {
                     let pfv = format_ident!("decode_{key}");
                     quote_into! {s += #key => {
-                        if let Some(value) = Self::#pfv(v) {
-                            point.#ident = value;
-                        } else {
-                            // return Err(concat!("could not decode ", #key, "s value"));
+                        let Some(value) = Self::#pfv(v) else {
                             return Err(#ci::Error::DecodeFailed(#key));
-                        }
+                        };
+                        point.#ident = value;
                     }}
                 }}
-                _ => unreachable!()
+                _ => return Err(#ci::Error::UnknownFeatureKey) 
             }
         }
 
@@ -407,11 +403,5 @@ fn to_camelcase(input: &str) -> String {
 }
 
 fn crate_ident() -> syn::Ident {
-    // let found_crate = crate_name("shah").unwrap();
-    // let name = match &found_crate {
-    //     FoundCrate::Itself => "shah",
-    //     FoundCrate::Name(name) => name,
-    // };
-
     syn::Ident::new("mapack", proc_macro2::Span::call_site())
 }

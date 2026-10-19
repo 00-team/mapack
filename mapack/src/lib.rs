@@ -33,6 +33,7 @@ pub enum Error {
     BadGeomerty,
     BadTagsLength,
     InvalidTag,
+    UnknownFeatureKey,
     DecodeFailed(&'static str),
 }
 
